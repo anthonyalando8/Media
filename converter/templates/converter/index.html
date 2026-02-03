@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video to MP3 Converter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2em;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+        }
+
+        input[type="url"] {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        input[type="url"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin-top: 10px;
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .progress-container {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .progress-container.active {
+            display: block;
+        }
+
+        .progress-bar-wrapper {
+            background: #f0f0f0;
+            border-radius: 10px;
+            height: 30px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .progress-text {
+            text-align: center;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .video-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .video-info.active {
+            display: block;
+        }
+
+        .video-info h3 {
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 1.1em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .video-info p {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .error {
+            background: #fee;
+            border: 2px solid #fcc;
+            color: #c33;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .error.active {
+            display: block;
+        }
+
+        .success {
+            background: #efe;
+            border: 2px solid #cfc;
+            color: #363;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+            text-align: center;
+        }
+
+        .success.active {
+            display: block;
+        }
+
+        .success h3 {
+            margin-bottom: 15px;
+        }
+
+        .success .filename {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #555;
+            word-break: break-all;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .download-btn {
+            flex: 1;
+            display: inline-block;
+            padding: 12px 20px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .download-btn:hover {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.3);
+        }
+
+        .convert-next-btn {
+            flex: 1;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .convert-next-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .error-actions {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .retry-btn {
+            display: none;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .retry-btn.active {
+            display: inline-block;
+        }
+
+        .retry-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 Video to MP3 Converter</h1>
+        <p class="subtitle">Convert any video to high-quality MP3 in seconds</p>
+
+        <div class="error" id="errorMessage">
+            <div id="errorText"></div>
+            <div class="error-actions">
+                <button class="retry-btn" id="retryBtn">🔄 Try Again</button>
+            </div>
+        </div>
+
+        <form id="conversionForm">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="id_url">Video URL</label>
+                {{ form.url }}
+            </div>
+            <button type="submit" class="btn" id="submitBtn">
+                Convert to MP3
+            </button>
+        </form>
+
+        <div class="video-info" id="videoInfo">
+            <h3 id="videoTitle"></h3>
+            <p id="videoDuration"></p>
+        </div>
+
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-text" id="progressText">Initializing...</div>
+            <div class="progress-bar-wrapper">
+                <div class="progress-bar" id="progressBar">0%</div>
+            </div>
+        </div>
+
+        <div class="success" id="successMessage">
+            <h3>✅ Conversion Complete!</h3>
+            <div class="filename" id="filenameDisplay"></div>
+            <div class="action-buttons">
+                <a href="#" id="downloadLink" class="download-btn" download>
+                    📥 Download MP3
+                </a>
+                <button class="convert-next-btn" id="convertNextBtn">
+                    🔄 Convert Next
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('conversionForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
+        const retryBtn = document.getElementById('retryBtn');
+        const videoInfo = document.getElementById('videoInfo');
+        const videoTitle = document.getElementById('videoTitle');
+        const videoDuration = document.getElementById('videoDuration');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const successMessage = document.getElementById('successMessage');
+        const downloadLink = document.getElementById('downloadLink');
+        const filenameDisplay = document.getElementById('filenameDisplay');
+        const convertNextBtn = document.getElementById('convertNextBtn');
+        const urlInput = document.getElementById('id_url');
+
+        let ws = null;
+        let currentFilename = '';
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.classList.add('active', 'fade-in');
+            retryBtn.classList.add('active');
+            
+            // Auto-hide after 10 seconds (but keep retry button visible)
+            setTimeout(() => {
+                if (errorMessage.classList.contains('active')) {
+                    errorMessage.style.opacity = '0.7';
+                }
+            }, 10000);
+        }
+
+        function hideError() {
+            errorMessage.classList.remove('active', 'fade-in');
+            retryBtn.classList.remove('active');
+            errorMessage.style.opacity = '1';
+        }
+
+        function resetForm() {
+            // Clear URL input
+            urlInput.value = '';
+            
+            // Reset all UI elements
+            hideError();
+            videoInfo.classList.remove('active');
+            progressContainer.classList.remove('active');
+            successMessage.classList.remove('active');
+            
+            // Reset progress bar
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            progressText.textContent = 'Initializing...';
+            
+            // Enable submit button
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Convert to MP3';
+            
+            // Close WebSocket if open
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            
+            // Clear filename
+            currentFilename = '';
+            
+            // Focus on input
+            urlInput.focus();
+        }
+
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        function connectWebSocket(taskId) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/progress/${taskId}/`;
+            
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                console.log('Progress update:', data);
+
+                progressText.textContent = data.message || 'Processing...';
+                progressBar.style.width = `${data.percent}%`;
+                progressBar.textContent = `${data.percent}%`;
+
+                if (data.state === 'SUCCESS') {
+                    progressContainer.classList.remove('active');
+                    successMessage.classList.add('active', 'fade-in');
+                    
+                    // Set filename and download link
+                    currentFilename = data.filename || `${data.file_id}.mp3`;
+                    downloadLink.href = `/media/${currentFilename}`;
+                    downloadLink.download = currentFilename;
+                    
+                    // Display filename with size info
+                    let fileInfo = `📄 ${currentFilename}`;
+                    if (data.file_size) {
+                        fileInfo += ` (${formatFileSize(data.file_size)})`;
+                    }
+                    filenameDisplay.textContent = fileInfo;
+                    
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Convert to MP3';
+                }
+
+                if (data.state === 'FAILURE') {
+                    showError(data.message || 'Conversion failed. Please try again.');
+                    progressContainer.classList.remove('active');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Convert to MP3';
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                showError('Connection error. Please check your internet and try again.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Convert to MP3';
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket closed');
+            };
+        }
+
+        async function startConversion(e) {
+            if (e) e.preventDefault();
+
+            // Reset UI
+            hideError();
+            videoInfo.classList.remove('active');
+            progressContainer.classList.remove('active');
+            successMessage.classList.remove('active');
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner"></span> Processing...';
+
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch('/api/convert/', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || data.details || 'Conversion failed');
+                }
+
+                // Show video info
+                videoTitle.textContent = data.title;
+                videoDuration.textContent = `Duration: ${formatDuration(data.duration)}`;
+                videoInfo.classList.add('active', 'fade-in');
+
+                // Show progress
+                progressContainer.classList.add('active', 'fade-in');
+
+                // Connect WebSocket for real-time updates
+                connectWebSocket(data.task_id);
+
+            } catch (error) {
+                showError(error.message);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Convert to MP3';
+            }
+        }
+
+        // Form submission
+        form.addEventListener('submit', startConversion);
+
+        // Convert Next button
+        convertNextBtn.addEventListener('click', () => {
+            resetForm();
+        });
+
+        // Retry button
+        retryBtn.addEventListener('click', () => {
+            hideError();
+            startConversion();
+        });
+
+        // Auto-focus on input when page loads
+        window.addEventListener('load', () => {
+            urlInput.focus();
+        });
+
+        // Clear error when user starts typing
+        urlInput.addEventListener('input', () => {
+            if (errorMessage.classList.contains('active')) {
+                hideError();
+            }
+        });
+    </script>
+</body>
+</html>

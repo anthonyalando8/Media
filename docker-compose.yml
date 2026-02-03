@@ -1,0 +1,58 @@
+version: '3.9'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build: .
+    command: daphne -b 0.0.0.0 -p 8000 MediaConverter.asgi:application
+    volumes:
+      - .:/code
+      - media_files:/code/media
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery_worker:
+    build: .
+    command: celery -A MediaConverter worker -l info --concurrency=2
+    volumes:
+      - .:/code
+      - media_files:/code/media
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery_beat:
+    build: .
+    command: celery -A MediaConverter beat -l info
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  media_files:
