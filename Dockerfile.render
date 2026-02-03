@@ -1,0 +1,47 @@
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    wget \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --upgrade yt-dlp
+
+# Copy project files
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/media /app/staticfiles
+
+# Collect static files
+RUN python manage.py collectstatic --noinput || true
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+python manage.py migrate --noinput\n\
+daphne -b 0.0.0.0 -p $PORT MediaConverter.asgi:application &\n\
+DAPHNE_PID=$!\n\
+celery -A MediaConverter worker -l info --concurrency=1 &\n\
+CELERY_PID=$!\n\
+wait $DAPHNE_PID $CELERY_PID\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
+# Expose port (Render will set the PORT env variable)
+EXPOSE 10000
+
+# Start the application
+CMD ["/app/start.sh"]

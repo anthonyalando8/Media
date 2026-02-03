@@ -1,25 +1,38 @@
 """
 Django settings for MediaConverter project.
-Production-grade configuration with Celery, Redis, and Channels support.
+Optimized for Render.com deployment.
 """
 
 import os
 from pathlib import Path
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
+# Security settings
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-y+g_o71o9$l0my@03v%bgl(0!iipbqde-5l0yf1iy^8!2uhf&h')
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+# Render.com specific
+RENDER = os.getenv('RENDER', 'False') == 'True'
+RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# Allowed hosts
+ALLOWED_HOSTS = []
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+if DEBUG:
+    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
+else:
+    allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
+    if allowed_hosts_env:
+        ALLOWED_HOSTS.extend(allowed_hosts_env.split(','))
+    else:
+        ALLOWED_HOSTS.append('*')
 
 # Application definition
 INSTALLED_APPS = [
-    'daphne',  # Must be first for Channels
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -32,6 +45,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -58,10 +72,8 @@ TEMPLATES = [
     },
 ]
 
-# ASGI Application (for Channels/WebSockets)
+# ASGI Application
 ASGI_APPLICATION = 'MediaConverter.asgi.application'
-
-# WSGI Application (fallback)
 WSGI_APPLICATION = 'MediaConverter.wsgi.application'
 
 # Database
@@ -74,18 +86,10 @@ DATABASES = {
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 # Internationalization
@@ -94,55 +98,79 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
-STATIC_URL = 'static/'
+# Static files
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ========== CELERY CONFIGURATION ==========
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+# ========== REDIS & CELERY CONFIGURATION ==========
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
+# Parse Redis URL for Render (they use different format)
+if REDIS_URL.startswith('rediss://'):
+    # Render uses rediss:// for SSL connections
+    import ssl
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
+    CELERY_BROKER_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
+    CELERY_REDIS_BACKEND_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
+else:
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
+
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes max per task
-CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_RESULT_EXPIRES = 3600  # 1 hour
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1  # Restart worker after each task (memory optimization)
 
-# ========== REDIS CONFIGURATION ==========
-REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-
-# ========== CHANNELS CONFIGURATION (WebSockets) ==========
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [os.getenv('REDIS_URL', 'redis://localhost:6379/0')],
-            "capacity": 1500,
-            "expiry": 10,
+# ========== CHANNELS CONFIGURATION ==========
+if REDIS_URL.startswith('rediss://'):
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+                "capacity": 1500,
+                "expiry": 10,
+            },
         },
-    },
-}
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+                "capacity": 1500,
+                "expiry": 10,
+            },
+        },
+    }
 
 # ========== VIDEO CONVERTER SETTINGS ==========
-MAX_VIDEO_DURATION = 600  # 10 minutes in seconds
-AUDIO_QUALITY = '192'  # kbps
-AUDIO_FORMAT = 'mp3'
-FILE_CLEANUP_AFTER = 3600  # Clean up files after 1 hour
+MAX_VIDEO_DURATION = int(os.getenv('MAX_VIDEO_DURATION', '600'))  # 10 minutes
+AUDIO_QUALITY = os.getenv('AUDIO_QUALITY', '192')
+AUDIO_FORMAT = os.getenv('AUDIO_FORMAT', 'mp3')
+FILE_CLEANUP_AFTER = int(os.getenv('FILE_CLEANUP_AFTER', '1800'))  # 30 minutes (shorter for free tier)
 
 # ========== ASGI/DAPHNE TIMEOUTS ==========
-# Prevent "took too long to shut down" warnings
-ASGI_THREADS = 4
-ASGI_APPLICATION_CLOSE_TIMEOUT = 5  # seconds
+ASGI_THREADS = 2  # Reduced for 512MB RAM
+ASGI_APPLICATION_CLOSE_TIMEOUT = 5
 
-# ========== SECURITY SETTINGS (Production) ==========
+# ========== SECURITY SETTINGS ==========
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
@@ -150,3 +178,42 @@ if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    
+    # CSRF trusted origins for Render
+    if RENDER_EXTERNAL_HOSTNAME:
+        CSRF_TRUSTED_ORIGINS = [f'https://{RENDER_EXTERNAL_HOSTNAME}']
+
+# Logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'celery': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}

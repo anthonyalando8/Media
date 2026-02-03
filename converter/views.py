@@ -10,6 +10,8 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import ensure_csrf_cookie
 from .forms import VideoURLForm
 from .tasks import convert_video_to_mp3
+from django.views.decorators.csrf import csrf_exempt
+from django.http import HttpResponse
 
 
 @ensure_csrf_cookie
@@ -17,6 +19,12 @@ def index(request):
     """Main page with conversion form"""
     form = VideoURLForm()
     return render(request, "converter/index.html", {"form": form})
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def health_check(request):
+    """Health check endpoint for Fly.io"""
+    return HttpResponse("OK", status=200)
 
 
 @require_http_methods(["POST"])
