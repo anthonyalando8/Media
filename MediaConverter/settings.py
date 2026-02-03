@@ -18,17 +18,18 @@ RENDER = os.getenv('RENDER', 'False') == 'True'
 RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 
 # Allowed hosts
-ALLOWED_HOSTS = []
-if RENDER_EXTERNAL_HOSTNAME:
-    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
-if DEBUG:
-    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
-else:
-    allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
-    if allowed_hosts_env:
-        ALLOWED_HOSTS.extend(allowed_hosts_env.split(','))
-    else:
-        ALLOWED_HOSTS.append('*')
+ALLOWED_HOSTS = ['*'] 
+# ALLOWED_HOSTS = []
+# if RENDER_EXTERNAL_HOSTNAME:
+#     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+# if DEBUG:
+#     ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
+# else:
+#     allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
+#     if allowed_hosts_env:
+#         ALLOWED_HOSTS.extend(allowed_hosts_env.split(','))
+#     else:
+#         ALLOWED_HOSTS.append('*')
 
 # Application definition
 INSTALLED_APPS = [
