@@ -18,18 +18,7 @@ RENDER = os.getenv('RENDER', 'False') == 'True'
 RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 
 # Allowed hosts
-ALLOWED_HOSTS = ['*'] 
-# ALLOWED_HOSTS = []
-# if RENDER_EXTERNAL_HOSTNAME:
-#     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
-# if DEBUG:
-#     ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
-# else:
-#     allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
-#     if allowed_hosts_env:
-#         ALLOWED_HOSTS.extend(allowed_hosts_env.split(','))
-#     else:
-#         ALLOWED_HOSTS.append('*')
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [
@@ -171,19 +160,34 @@ FILE_CLEANUP_AFTER = int(os.getenv('FILE_CLEANUP_AFTER', '1800'))  # 30 minutes 
 ASGI_THREADS = 2  # Reduced for 512MB RAM
 ASGI_APPLICATION_CLOSE_TIMEOUT = 5
 
+# ========== CSRF CONFIGURATION ==========
+# CRITICAL: Set CSRF_TRUSTED_ORIGINS regardless of DEBUG mode
+CSRF_TRUSTED_ORIGINS = [
+    'https://media-wapn.onrender.com',
+    'https://*.onrender.com',
+]
+
+# Add custom domain if provided
+if RENDER_EXTERNAL_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
+
+# CSRF cookie settings
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_USE_SESSIONS = False
+
 # ========== SECURITY SETTINGS ==========
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    
-    # CSRF trusted origins for Render
-    if RENDER_EXTERNAL_HOSTNAME:
-        CSRF_TRUSTED_ORIGINS = [f'https://{RENDER_EXTERNAL_HOSTNAME}']
+else:
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
 
 # Logging
 LOGGING = {
