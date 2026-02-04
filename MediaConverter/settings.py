@@ -101,20 +101,27 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ========== REDIS & CELERY CONFIGURATION ==========
+# Try to get Redis URL from environment
 REDIS_URL = os.environ.get('REDIS_URL')
 
-import logging
-logger = logging.getLogger(__name__)
+# Print for debugging (will show in Render logs)
+print(f"[DEBUG] REDIS_URL: {'SET' if REDIS_URL else 'NOT SET'}")
 if REDIS_URL:
-    logger.warning("REDIS_URL detected: %s", REDIS_URL[:20] + "...")
-else:
-    logger.error("REDIS_URL is NOT set")
+    # Mask the URL for security in logs
+    masked_url = REDIS_URL.split('@')[0] + '@...' if '@' in REDIS_URL else REDIS_URL[:30] + '...'
+    print(f"[DEBUG] Redis URL starts with: {masked_url}")
 
-
+# Fallback to localhost for local development
 if not REDIS_URL:
-    raise RuntimeError("REDIS_URL is missing — Render Redis not injected")
+    if DEBUG:
+        print("[WARNING] REDIS_URL not set, using localhost (development only)")
+        REDIS_URL = 'redis://localhost:6379/0'
+    else:
+        print("[ERROR] REDIS_URL not set in production!")
+        # Don't raise error yet - let's try to start anyway
+        REDIS_URL = 'redis://localhost:6379/0'
 
-# Parse Redis URL for Render (they use different format)
+# Parse Redis URL for Render
 if REDIS_URL.startswith('rediss://'):
     # Render uses rediss:// for SSL connections
     import ssl
@@ -122,10 +129,36 @@ if REDIS_URL.startswith('rediss://'):
     CELERY_RESULT_BACKEND = REDIS_URL
     CELERY_BROKER_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
     CELERY_REDIS_BACKEND_USE_SSL = {'ssl_cert_reqs': ssl.CERT_NONE}
+    
+    # Channels SSL config
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [{
+                    "address": REDIS_URL,
+                }],
+                "capacity": 1500,
+                "expiry": 10,
+            },
+        },
+    }
 else:
     CELERY_BROKER_URL = REDIS_URL
     CELERY_RESULT_BACKEND = REDIS_URL
+    
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+                "capacity": 1500,
+                "expiry": 10,
+            },
+        },
+    }
 
+# Celery configuration
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -135,56 +168,34 @@ CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
 CELERY_RESULT_EXPIRES = 3600  # 1 hour
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 1  # Restart worker after each task (memory optimization)
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1
 
-# ========== CHANNELS CONFIGURATION ==========
-if REDIS_URL.startswith('rediss://'):
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {
-                "hosts": [REDIS_URL],
-                "capacity": 1500,
-                "expiry": 10,
-            },
-        },
-    }
-else:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {
-                "hosts": [REDIS_URL],
-                "capacity": 1500,
-                "expiry": 10,
-            },
-        },
-    }
+# Celery retry settings
+CELERY_BROKER_CONNECTION_RETRY = True
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_CONNECTION_MAX_RETRIES = 10
 
 # ========== VIDEO CONVERTER SETTINGS ==========
 MAX_VIDEO_DURATION = int(os.getenv('MAX_VIDEO_DURATION', '600'))  # 10 minutes
 AUDIO_QUALITY = os.getenv('AUDIO_QUALITY', '192')
 AUDIO_FORMAT = os.getenv('AUDIO_FORMAT', 'mp3')
-FILE_CLEANUP_AFTER = int(os.getenv('FILE_CLEANUP_AFTER', '1800'))  # 30 minutes (shorter for free tier)
+FILE_CLEANUP_AFTER = int(os.getenv('FILE_CLEANUP_AFTER', '1800'))  # 30 minutes
 
 # ========== ASGI/DAPHNE TIMEOUTS ==========
-ASGI_THREADS = 2  # Reduced for 512MB RAM
+ASGI_THREADS = 2
 ASGI_APPLICATION_CLOSE_TIMEOUT = 5
 
 # ========== CSRF CONFIGURATION ==========
-# CRITICAL: Set CSRF_TRUSTED_ORIGINS regardless of DEBUG mode
 CSRF_TRUSTED_ORIGINS = [
     'https://media-wapn.onrender.com',
     'https://*.onrender.com',
 ]
 
-# Add custom domain if provided
 if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
 
-# CSRF cookie settings
 CSRF_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
+CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_USE_SESSIONS = False
 
