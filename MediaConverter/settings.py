@@ -101,7 +101,14 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ========== REDIS & CELERY CONFIGURATION ==========
-REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+REDIS_URL = os.environ.get('REDIS_URL')
+
+import logging
+logger = logging.getLogger(__name__)
+logger.warning("REDIS_URL detected: %s", REDIS_URL[:20] + "...")
+
+if not REDIS_URL:
+    raise RuntimeError("REDIS_URL is missing — Render Redis not injected")
 
 # Parse Redis URL for Render (they use different format)
 if REDIS_URL.startswith('rediss://'):
