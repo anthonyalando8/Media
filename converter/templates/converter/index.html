@@ -83,12 +83,12 @@
             transition: transform 0.2s, box-shadow 0.2s;
         }
 
-        .btn:hover {
+        .btn:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
 
-        .btn:active {
+        .btn:active:not(:disabled) {
             transform: translateY(0);
         }
 
@@ -98,16 +98,7 @@
             transform: none;
         }
 
-        .btn-secondary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            margin-top: 10px;
-        }
-
-        .btn-secondary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-
+        /* Progress Section */
         .progress-container {
             display: none;
             margin-top: 30px;
@@ -117,31 +108,70 @@
             display: block;
         }
 
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .progress-text {
+            color: #666;
+            font-weight: 500;
+            font-size: 0.95em;
+        }
+
+        .progress-percentage {
+            color: #667eea;
+            font-weight: 700;
+            font-size: 1.1em;
+        }
+
         .progress-bar-wrapper {
             background: #f0f0f0;
             border-radius: 10px;
-            height: 30px;
+            height: 35px;
             overflow: hidden;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
+            position: relative;
         }
 
         .progress-bar {
             height: 100%;
             background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
             width: 0%;
-            transition: width 0.3s ease;
+            transition: width 0.5s ease-out;
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
             font-weight: 600;
             font-size: 14px;
+            position: relative;
+            overflow: hidden;
         }
 
-        .progress-text {
+        .progress-bar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .progress-stage {
             text-align: center;
-            color: #666;
-            margin-bottom: 10px;
+            color: #999;
+            font-size: 0.85em;
+            margin-top: 5px;
         }
 
         .video-info {
@@ -201,6 +231,7 @@
 
         .success h3 {
             margin-bottom: 15px;
+            font-size: 1.3em;
         }
 
         .success .filename {
@@ -291,6 +322,7 @@
             animation: spin 1s linear infinite;
             display: inline-block;
             margin-right: 10px;
+            vertical-align: middle;
         }
 
         @keyframes spin {
@@ -311,6 +343,31 @@
 
         .fade-in {
             animation: fadeIn 0.3s ease-in;
+        }
+
+        /* Stage indicators */
+        .stage-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 0.8em;
+        }
+
+        .stage {
+            flex: 1;
+            text-align: center;
+            color: #ccc;
+            padding: 5px;
+            position: relative;
+        }
+
+        .stage.active {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .stage.completed {
+            color: #28a745;
         }
     </style>
 </head>
@@ -343,9 +400,20 @@
         </div>
 
         <div class="progress-container" id="progressContainer">
-            <div class="progress-text" id="progressText">Initializing...</div>
+            <div class="progress-header">
+                <span class="progress-text" id="progressText">Initializing...</span>
+                <span class="progress-percentage" id="progressPercentage">0%</span>
+            </div>
             <div class="progress-bar-wrapper">
-                <div class="progress-bar" id="progressBar">0%</div>
+                <div class="progress-bar" id="progressBar">
+                    <span id="progressBarText"></span>
+                </div>
+            </div>
+            <div class="stage-indicator">
+                <div class="stage" id="stage-validate">Validate</div>
+                <div class="stage" id="stage-download">Download</div>
+                <div class="stage" id="stage-convert">Convert</div>
+                <div class="stage" id="stage-complete">Complete</div>
             </div>
         </div>
 
@@ -374,7 +442,9 @@
         const videoDuration = document.getElementById('videoDuration');
         const progressContainer = document.getElementById('progressContainer');
         const progressBar = document.getElementById('progressBar');
+        const progressBarText = document.getElementById('progressBarText');
         const progressText = document.getElementById('progressText');
+        const progressPercentage = document.getElementById('progressPercentage');
         const successMessage = document.getElementById('successMessage');
         const downloadLink = document.getElementById('downloadLink');
         const filenameDisplay = document.getElementById('filenameDisplay');
@@ -384,12 +454,50 @@
         let ws = null;
         let currentFilename = '';
 
+        function updateProgress(percent, message, state) {
+            // Ensure percent is between 0-100
+            percent = Math.min(100, Math.max(0, percent));
+            
+            // Update all progress indicators with the same value
+            progressBar.style.width = `${percent}%`;
+            progressBarText.textContent = `${percent}%`;
+            progressPercentage.textContent = `${percent}%`;
+            progressText.textContent = message || 'Processing...';
+            
+            // Update stage indicators
+            updateStageIndicators(state, percent);
+        }
+
+        function updateStageIndicators(state, percent) {
+            const stages = ['validate', 'download', 'convert', 'complete'];
+            
+            stages.forEach(stage => {
+                const el = document.getElementById(`stage-${stage}`);
+                el.classList.remove('active', 'completed');
+            });
+            
+            // Determine active stage based on state and percent
+            if (state === 'VALIDATING' || percent < 10) {
+                document.getElementById('stage-validate').classList.add('active');
+            } else if (state === 'DOWNLOADING' || (percent >= 10 && percent < 80)) {
+                document.getElementById('stage-validate').classList.add('completed');
+                document.getElementById('stage-download').classList.add('active');
+            } else if (state === 'CONVERTING' || (percent >= 80 && percent < 100)) {
+                document.getElementById('stage-validate').classList.add('completed');
+                document.getElementById('stage-download').classList.add('completed');
+                document.getElementById('stage-convert').classList.add('active');
+            } else if (state === 'SUCCESS' || percent === 100) {
+                stages.forEach(stage => {
+                    document.getElementById(`stage-${stage}`).classList.add('completed');
+                });
+            }
+        }
+
         function showError(message) {
             errorText.textContent = message;
             errorMessage.classList.add('active', 'fade-in');
             retryBtn.classList.add('active');
             
-            // Auto-hide after 10 seconds (but keep retry button visible)
             setTimeout(() => {
                 if (errorMessage.classList.contains('active')) {
                     errorMessage.style.opacity = '0.7';
@@ -404,34 +512,23 @@
         }
 
         function resetForm() {
-            // Clear URL input
             urlInput.value = '';
-            
-            // Reset all UI elements
             hideError();
             videoInfo.classList.remove('active');
             progressContainer.classList.remove('active');
             successMessage.classList.remove('active');
             
-            // Reset progress bar
-            progressBar.style.width = '0%';
-            progressBar.textContent = '0%';
-            progressText.textContent = 'Initializing...';
+            updateProgress(0, 'Initializing...', '');
             
-            // Enable submit button
             submitBtn.disabled = false;
             submitBtn.innerHTML = 'Convert to MP3';
             
-            // Close WebSocket if open
             if (ws) {
                 ws.close();
                 ws = null;
             }
             
-            // Clear filename
             currentFilename = '';
-            
-            // Focus on input
             urlInput.focus();
         }
 
@@ -461,28 +558,30 @@
                 const data = JSON.parse(event.data);
                 console.log('Progress update:', data);
 
-                progressText.textContent = data.message || 'Processing...';
-                progressBar.style.width = `${data.percent}%`;
-                progressBar.textContent = `${data.percent}%`;
+                // Update progress with consistent values
+                updateProgress(data.percent || 0, data.message, data.state);
 
                 if (data.state === 'SUCCESS') {
-                    progressContainer.classList.remove('active');
-                    successMessage.classList.add('active', 'fade-in');
+                    // Ensure we show 100% before hiding
+                    updateProgress(100, 'Conversion complete!', 'SUCCESS');
                     
-                    // Set filename and download link
-                    currentFilename = data.filename || `${data.file_id}.mp3`;
-                    downloadLink.href = `/media/${currentFilename}`;
-                    downloadLink.download = currentFilename;
-                    
-                    // Display filename with size info
-                    let fileInfo = `📄 ${currentFilename}`;
-                    if (data.file_size) {
-                        fileInfo += ` (${formatFileSize(data.file_size)})`;
-                    }
-                    filenameDisplay.textContent = fileInfo;
-                    
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = 'Convert to MP3';
+                    setTimeout(() => {
+                        progressContainer.classList.remove('active');
+                        successMessage.classList.add('active', 'fade-in');
+                        
+                        currentFilename = data.filename || `${data.file_id}.mp3`;
+                        downloadLink.href = `/media/${currentFilename}`;
+                        downloadLink.download = currentFilename;
+                        
+                        let fileInfo = `📄 ${currentFilename}`;
+                        if (data.file_size) {
+                            fileInfo += ` (${formatFileSize(data.file_size)})`;
+                        }
+                        filenameDisplay.textContent = fileInfo;
+                        
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = 'Convert to MP3';
+                    }, 500);
                 }
 
                 if (data.state === 'FAILURE') {
@@ -508,7 +607,6 @@
         async function startConversion(e) {
             if (e) e.preventDefault();
 
-            // Reset UI
             hideError();
             videoInfo.classList.remove('active');
             progressContainer.classList.remove('active');
@@ -534,15 +632,13 @@
                     throw new Error(data.error || data.details || 'Conversion failed');
                 }
 
-                // Show video info
-                videoTitle.textContent = data.title;
-                videoDuration.textContent = `Duration: ${formatDuration(data.duration)}`;
+                videoTitle.textContent = data.title || 'Video';
+                videoDuration.textContent = data.duration ? `Duration: ${formatDuration(data.duration)}` : '';
                 videoInfo.classList.add('active', 'fade-in');
 
-                // Show progress
                 progressContainer.classList.add('active', 'fade-in');
+                updateProgress(0, 'Starting conversion...', 'VALIDATING');
 
-                // Connect WebSocket for real-time updates
                 connectWebSocket(data.task_id);
 
             } catch (error) {
@@ -552,26 +648,14 @@
             }
         }
 
-        // Form submission
         form.addEventListener('submit', startConversion);
-
-        // Convert Next button
-        convertNextBtn.addEventListener('click', () => {
-            resetForm();
-        });
-
-        // Retry button
+        convertNextBtn.addEventListener('click', resetForm);
         retryBtn.addEventListener('click', () => {
             hideError();
             startConversion();
         });
 
-        // Auto-focus on input when page loads
-        window.addEventListener('load', () => {
-            urlInput.focus();
-        });
-
-        // Clear error when user starts typing
+        window.addEventListener('load', () => urlInput.focus());
         urlInput.addEventListener('input', () => {
             if (errorMessage.classList.contains('active')) {
                 hideError();
