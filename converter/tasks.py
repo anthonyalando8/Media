@@ -32,16 +32,41 @@ def update_progress(task_id, state, percent, message, **extra_data):
     )
 
 
-def sanitize_filename(filename, max_length=100):
-    """Sanitize filename to be safe for filesystem."""
+def sanitize_filename(filename, max_length=80):
+    """
+    Sanitize filename to be safe for filesystem and URLs.
+    Removes/replaces invalid characters including commas and spaces.
+    """
+    # Remove or replace invalid filesystem characters
     filename = re.sub(r'[<>:"/\\|?*]', '', filename)
+    
+    # Remove control characters
     filename = re.sub(r'[\x00-\x1f\x80-\x9f]', '', filename)
+    
+    # CRITICAL: Remove commas and other problematic characters
+    filename = filename.replace(',', '')
+    filename = filename.replace(';', '')
+    filename = filename.replace('&', 'and')
+    filename = filename.replace("'", '')
+    filename = filename.replace('"', '')
+    
+    # Replace multiple spaces with single space
     filename = re.sub(r'\s+', ' ', filename)
-    filename = filename.strip('. ')
     
+    # Replace spaces with underscores for URL safety
+    filename = filename.replace(' ', '_')
+    
+    # Remove consecutive underscores
+    filename = re.sub(r'_+', '_', filename)
+    
+    # Remove leading/trailing spaces, dots, and underscores
+    filename = filename.strip('. _-')
+    
+    # Limit length (leave room for timestamp and extension)
     if len(filename) > max_length:
-        filename = filename[:max_length].strip()
+        filename = filename[:max_length].strip('_-')
     
+    # If empty after sanitization, return None
     if not filename:
         return None
     
@@ -49,7 +74,10 @@ def sanitize_filename(filename, max_length=100):
 
 
 def generate_unique_filename(title, file_id):
-    """Generate a unique filename from video title."""
+    """
+    Generate a unique filename from video title.
+    Format: Title_YYYYMMDD_HHMMSS_shortid.mp3
+    """
     clean_title = sanitize_filename(title)
     
     if clean_title:
@@ -57,6 +85,7 @@ def generate_unique_filename(title, file_id):
         short_id = file_id.split('-')[0]
         filename = f"{clean_title}_{timestamp}_{short_id}.mp3"
     else:
+        # Fallback to UUID-based name
         filename = f"audio_{file_id}.mp3"
     
     return filename
@@ -189,6 +218,10 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
         mp3_path = os.path.join(settings.MEDIA_ROOT, final_filename)
         temp_path = os.path.join(settings.MEDIA_ROOT, f"temp_{file_id}")
         
+        # Log the filename for debugging
+        print(f"[DEBUG] Generated filename: {final_filename}")
+        print(f"[DEBUG] Full path: {mp3_path}")
+        
         # Stage 3: Download (20-90%)
         update_progress(task_id, 'DOWNLOADING', 20, 'Starting download...')
         
@@ -218,6 +251,7 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
         
         if os.path.exists(temp_mp3):
             os.rename(temp_mp3, mp3_path)
+            print(f"[DEBUG] Renamed {temp_mp3} to {mp3_path}")
         elif not os.path.exists(mp3_path):
             raise Exception("MP3 file was not created")
         
@@ -227,6 +261,8 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
         file_size = os.path.getsize(mp3_path)
         if file_size < 1024:
             raise Exception("Generated MP3 file is too small")
+        
+        print(f"[SUCCESS] File created: {mp3_path} ({file_size} bytes)")
         
         # Success!
         update_progress(
