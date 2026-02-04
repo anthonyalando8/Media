@@ -1,6 +1,6 @@
 """
 Celery tasks for video to MP3 conversion.
-Enhanced with advanced YouTube bot detection bypass using PO Token.
+Enhanced with advanced YouTube bot detection bypass and smooth progress tracking.
 """
 import os
 import time
@@ -22,12 +22,18 @@ redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
 
 def update_progress(task_id, state, percent, message, **extra_data):
     """Helper function to update progress in Redis"""
+    # Ensure percent is an integer between 0-100
+    percent = max(0, min(100, int(percent)))
+    
     progress_data = {
         'state': state,
         'percent': percent,
         'message': message,
         **extra_data
     }
+    
+    logger.info(f"[PROGRESS] {percent}% - {state} - {message}")
+    
     redis_client.setex(
         f'conversion_progress:{task_id}',
         3600,
@@ -73,16 +79,18 @@ def generate_unique_filename(title, file_id):
 
 
 class ProgressHook:
-    """Custom progress hook for yt-dlp"""
+    """Custom progress hook for yt-dlp with accurate progress tracking"""
     
     def __init__(self, task_id):
         self.task_id = task_id
         self.last_update = 0
+        self.last_percent = 15
     
     def __call__(self, d):
         current_time = time.time()
         
-        if current_time - self.last_update < 0.5:
+        # Update every 0.3 seconds for smoother progress
+        if current_time - self.last_update < 0.3:
             return
         
         self.last_update = current_time
@@ -93,23 +101,28 @@ class ProgressHook:
             downloaded = d.get('downloaded_bytes', 0)
             
             if total > 0:
-                percent = int((downloaded / total) * 60) + 20
+                # Map download to 15-75% (60% range for download)
+                download_percent = (downloaded / total) * 100
+                percent = int(15 + (download_percent * 0.6))  # 15% + (0-60%)
+                percent = max(self.last_percent, percent)  # Never go backwards
+                self.last_percent = percent
             else:
-                percent = 20
+                percent = 15
             
             update_progress(
                 self.task_id,
                 'DOWNLOADING',
                 percent,
-                f'Downloading... {percent - 20}%'
+                f'Downloading... {int((downloaded / total) * 100) if total > 0 else 0}%'
             )
             
         elif status == 'finished':
+            # Download finished, starting conversion
             update_progress(
                 self.task_id,
                 'CONVERTING',
-                85,
-                'Converting to MP3...'
+                75,
+                'Download complete, converting to MP3...'
             )
 
 
@@ -146,26 +159,13 @@ def get_youtube_options(for_validation=False):
 
 @shared_task(bind=True, name='converter.convert_video_to_mp3', max_retries=3)
 def convert_video_to_mp3(self, url, file_id, video_title=None):
-    """Convert video from URL to MP3 format."""
+    """Convert video from URL to MP3 format with accurate progress tracking."""
     task_id = self.request.id
     
-    # CRITICAL DEBUG: Check environment at task start
     logger.info("=" * 80)
     logger.info(f"[TASK START] Task ID: {task_id}")
     logger.info(f"[TASK START] File ID: {file_id}")
     logger.info(f"[TASK START] URL: {url}")
-    logger.info(f"[TASK START] MEDIA_ROOT from settings: {settings.MEDIA_ROOT}")
-    logger.info(f"[TASK START] MEDIA_ROOT exists: {os.path.exists(settings.MEDIA_ROOT)}")
-    logger.info(f"[TASK START] MEDIA_ROOT is writable: {os.access(settings.MEDIA_ROOT, os.W_OK)}")
-    logger.info(f"[TASK START] Current working directory: {os.getcwd()}")
-    
-    # List current files in media root
-    try:
-        files_before = os.listdir(settings.MEDIA_ROOT)
-        logger.info(f"[TASK START] Files in MEDIA_ROOT before: {files_before}")
-    except Exception as e:
-        logger.error(f"[TASK START] Cannot list MEDIA_ROOT: {e}")
-    
     logger.info("=" * 80)
     
     try:
@@ -173,6 +173,8 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
         update_progress(task_id, 'VALIDATING', 0, 'Validating video URL...')
         
         validation_opts = get_youtube_options(for_validation=True)
+        
+        update_progress(task_id, 'VALIDATING', 5, 'Fetching video information...')
         
         with YoutubeDL(validation_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -194,28 +196,26 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
             task_id, 
             'VALIDATED', 
             10, 
-            f'Video validated: {title[:50]}...',
+            f'Video validated successfully',
             title=title,
             duration=duration,
             uploader=uploader
         )
         
-        # Stage 2: Prepare (10-20%)
-        update_progress(task_id, 'PREPARING', 15, 'Preparing download...')
+        # Stage 2: Prepare (10-15%)
+        update_progress(task_id, 'PREPARING', 12, 'Preparing download...')
         
         final_filename = generate_unique_filename(title, file_id)
         mp3_path = os.path.join(settings.MEDIA_ROOT, final_filename)
         temp_path = os.path.join(settings.MEDIA_ROOT, f"temp_{file_id}")
         
-        logger.info("=" * 80)
-        logger.info(f"[PATHS] Generated filename: {final_filename}")
-        logger.info(f"[PATHS] Full mp3_path: {mp3_path}")
-        logger.info(f"[PATHS] Temp path (without extension): {temp_path}")
-        logger.info(f"[PATHS] Expected temp file: {temp_path}.mp3")
-        logger.info("=" * 80)
+        logger.info(f"[PATHS] Final filename: {final_filename}")
+        logger.info(f"[PATHS] Temp path: {temp_path}")
         
-        # Stage 3: Download (20-90%)
-        update_progress(task_id, 'DOWNLOADING', 20, 'Starting download...')
+        update_progress(task_id, 'PREPARING', 15, 'Starting download...')
+        
+        # Stage 3: Download (15-75%)
+        # Progress updates happen in ProgressHook
         
         download_opts = get_youtube_options(for_validation=False)
         download_opts.update({
@@ -234,45 +234,46 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
         })
         
         logger.info(f"[DOWNLOAD] Starting yt-dlp download...")
-        logger.info(f"[DOWNLOAD] Output template: {temp_path}.%(ext)s")
         
         with YoutubeDL(download_opts) as ydl:
             ydl.download([url])
         
         logger.info(f"[DOWNLOAD] yt-dlp download completed")
         
-        # Stage 4: Finalize (90-100%)
-        update_progress(task_id, 'FINALIZING', 90, 'Finalizing...')
+        # Stage 4: Post-processing (75-95%)
+        update_progress(task_id, 'CONVERTING', 80, 'Converting to MP3 format...')
         
-        # List all files in media directory after download
-        logger.info("=" * 80)
-        logger.info(f"[AFTER DOWNLOAD] Checking for files...")
-        try:
-            all_files = os.listdir(settings.MEDIA_ROOT)
-            logger.info(f"[AFTER DOWNLOAD] All files in MEDIA_ROOT: {all_files}")
-            
-            # Look for any files matching our temp pattern
-            matching_files = [f for f in all_files if f.startswith(f"temp_{file_id}")]
-            logger.info(f"[AFTER DOWNLOAD] Files matching pattern: {matching_files}")
-        except Exception as e:
-            logger.error(f"[AFTER DOWNLOAD] Cannot list directory: {e}")
-        logger.info("=" * 80)
+        # Give FFmpeg time to finish conversion
+        time.sleep(0.5)
+        
+        update_progress(task_id, 'CONVERTING', 85, 'Finalizing audio file...')
         
         # Check for temp file
         temp_mp3 = temp_path + ".mp3"
+        
         logger.info(f"[FINALIZE] Looking for: {temp_mp3}")
         logger.info(f"[FINALIZE] File exists: {os.path.exists(temp_mp3)}")
+        
+        # Wait a bit for file system to catch up
+        max_wait = 5  # seconds
+        wait_interval = 0.5
+        elapsed = 0
+        
+        while not os.path.exists(temp_mp3) and elapsed < max_wait:
+            time.sleep(wait_interval)
+            elapsed += wait_interval
+            logger.info(f"[FINALIZE] Waiting for file... ({elapsed}s)")
+        
+        update_progress(task_id, 'FINALIZING', 90, 'Verifying file...')
         
         if os.path.exists(temp_mp3):
             logger.info(f"[FINALIZE] Found temp file, renaming to: {mp3_path}")
             os.rename(temp_mp3, mp3_path)
             logger.info(f"[FINALIZE] Rename successful")
         else:
-            # Maybe it was already converted to mp3_path?
             if os.path.exists(mp3_path):
                 logger.info(f"[FINALIZE] File already at final location: {mp3_path}")
             else:
-                # List all files to see what actually exists
                 try:
                     all_files = os.listdir(settings.MEDIA_ROOT)
                     logger.error(f"[FINALIZE] Expected file not found!")
@@ -282,20 +283,15 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
                 
                 raise Exception(f"MP3 file was not created. Expected: {temp_mp3}")
         
-        # Final verification
+        # Final verification (95-100%)
+        update_progress(task_id, 'FINALIZING', 95, 'Checking file integrity...')
+        
         if not os.path.exists(mp3_path):
             raise Exception(f"MP3 file does not exist at: {mp3_path}")
         
         file_size = os.path.getsize(mp3_path)
         if file_size < 1024:
             raise Exception(f"Generated MP3 file is too small: {file_size} bytes")
-        
-        # List final state
-        try:
-            final_files = os.listdir(settings.MEDIA_ROOT)
-            logger.info(f"[FINALIZE] Final files in MEDIA_ROOT: {final_files}")
-        except Exception as e:
-            logger.error(f"[FINALIZE] Cannot list MEDIA_ROOT: {e}")
         
         logger.info("=" * 80)
         logger.info(f"[SUCCESS] File created successfully!")
@@ -304,7 +300,7 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
         logger.info(f"[SUCCESS] Filename: {final_filename}")
         logger.info("=" * 80)
         
-        # Success!
+        # Success! (100%)
         update_progress(
             task_id,
             'SUCCESS',
