@@ -28,9 +28,9 @@ urlpatterns = [
 # if settings.DEBUG:
 #     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 # Serve media files (works with both /app/media and /tmp/media)
-if settings.DEBUG or True:  # Always serve media files in production too
-    urlpatterns += [
-        re_path(r'^media/(?P<path>.*)$', serve, {
-            'document_root': settings.MEDIA_ROOT,
-        }),
-    ]
+# if settings.DEBUG or True:  # Always serve media files in production too
+#     urlpatterns += [
+#         re_path(r'^media/(?P<path>.*)$', serve, {
+#             'document_root': settings.MEDIA_ROOT,
+#         }),
+#     ]

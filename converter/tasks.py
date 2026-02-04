@@ -11,6 +11,8 @@ from django.conf import settings
 from yt_dlp import YoutubeDL
 import redis
 import json
+import logging
+logger = logging.getLogger(__name__)
 
 
 # Redis connection for progress tracking
@@ -262,7 +264,14 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
         if file_size < 1024:
             raise Exception("Generated MP3 file is too small")
         
-        print(f"[SUCCESS] File created: {mp3_path} ({file_size} bytes)")
+        # List all files in media directory
+        try:
+            media_files = os.listdir(settings.MEDIA_ROOT)
+            logger.info(f"[DEBUG] Files in MEDIA_ROOT: {media_files}")
+        except Exception as e:
+            logger.error(f"[ERROR] Cannot list MEDIA_ROOT: {e}")
+
+        logger.info(f"[SUCCESS] File created: {mp3_path} ({file_size} bytes)")
         
         # Success!
         update_progress(
