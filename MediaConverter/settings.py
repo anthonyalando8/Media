@@ -105,7 +105,11 @@ REDIS_URL = os.environ.get('REDIS_URL')
 
 import logging
 logger = logging.getLogger(__name__)
-logger.warning("REDIS_URL detected: %s", REDIS_URL[:20] + "...")
+if REDIS_URL:
+    logger.warning("REDIS_URL detected: %s", REDIS_URL[:20] + "...")
+else:
+    logger.error("REDIS_URL is NOT set")
+
 
 if not REDIS_URL:
     raise RuntimeError("REDIS_URL is missing — Render Redis not injected")
