@@ -119,7 +119,7 @@ if not REDIS_URL:
     else:
         print("[ERROR] REDIS_URL not set in production!")
         # Don't raise error yet - let's try to start anyway
-        REDIS_URL = 'redis://localhost:6379/0'
+        REDIS_URL = 'redis://red-d61lascr85hc739irm3g:6379'
 
 # Parse Redis URL for Render
 if REDIS_URL.startswith('rediss://'):

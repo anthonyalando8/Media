@@ -1,12 +1,10 @@
 services:
-  # Redis service (required for Celery and Channels)
   - type: redis
     name: video-converter-redis
     plan: free
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []
 
-  # Web service (Django + Daphne + Celery worker combined)
   - type: web
     name: video-to-mp3-converter
     env: docker
@@ -18,7 +16,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
-        value: "False"  # String, not boolean
+        value: "False"
       - key: ALLOWED_HOSTS
         value: "*"
       - key: REDIS_URL
@@ -37,12 +35,10 @@ services:
           type: redis
           property: connectionString
       - key: MAX_VIDEO_DURATION
-        value: "600"  # String, not number
+        value: "600"
       - key: AUDIO_QUALITY
-        value: "192"  # String, not number
+        value: "192"
       - key: AUDIO_FORMAT
         value: "mp3"
       - key: FILE_CLEANUP_AFTER
-        value: "1800"  # String, not number
-      - key: PYTHON_VERSION
-        value: "3.11.0"
+        value: "1800"
