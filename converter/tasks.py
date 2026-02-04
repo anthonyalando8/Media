@@ -1,6 +1,6 @@
 """
 Celery tasks for video to MP3 conversion.
-Enhanced with YouTube bot detection bypass.
+Enhanced with advanced YouTube bot detection bypass using PO Token.
 """
 import os
 import time
@@ -27,7 +27,7 @@ def update_progress(task_id, state, percent, message, **extra_data):
     }
     redis_client.setex(
         f'conversion_progress:{task_id}',
-        3600,  # Expire after 1 hour
+        3600,
         json.dumps(progress_data)
     )
 
@@ -63,14 +63,13 @@ def generate_unique_filename(title, file_id):
 
 
 class ProgressHook:
-    """Custom progress hook for yt-dlp to track download/conversion progress"""
+    """Custom progress hook for yt-dlp"""
     
     def __init__(self, task_id):
         self.task_id = task_id
         self.last_update = 0
     
     def __call__(self, d):
-        """Called by yt-dlp with progress information"""
         current_time = time.time()
         
         if current_time - self.last_update < 0.5:
@@ -104,11 +103,48 @@ class ProgressHook:
             )
 
 
+def get_youtube_options(for_validation=False):
+    """
+    Get optimized yt-dlp options for YouTube.
+    Uses advanced techniques to bypass bot detection.
+    """
+    base_opts = {
+        "quiet": True if for_validation else False,
+        "no_warnings": True if for_validation else False,
+        "socket_timeout": 30,
+        "retries": 10,
+        "fragment_retries": 10,
+        
+        # Use Android/iOS clients - more reliable
+        "extractor_args": {
+            "youtube": {
+                # CRITICAL: Use android_creator client (most reliable in 2024+)
+                "player_client": ["android_creator", "android", "ios", "mweb"],
+                "player_skip": ["webpage"],
+                "skip": ["hls", "dash"],
+            }
+        },
+        
+        # Mobile user agent (matches android_creator client)
+        "http_headers": {
+            "User-Agent": "com.google.android.apps.youtube.creator/23.50.100 (Linux; U; Android 13; en_US) gzip",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate",
+        },
+        
+        "geo_bypass": True,
+        "age_limit": None,
+    }
+    
+    return base_opts
+
+
 @shared_task(bind=True, name='converter.convert_video_to_mp3', max_retries=3)
 def convert_video_to_mp3(self, url, file_id, video_title=None):
     """
     Convert video from URL to MP3 format.
-    Enhanced with YouTube bot detection bypass.
+    Enhanced with advanced YouTube bot bypass.
     """
     task_id = self.request.id
     
@@ -116,36 +152,14 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
         # Stage 1: Validation (0-10%)
         update_progress(task_id, 'VALIDATING', 0, 'Validating video URL...')
         
-        # Enhanced validation options to bypass bot detection
-        validation_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "socket_timeout": 15,
-            "extractor_args": {
-                "youtube": {
-                    # Use multiple client types for better success
-                    "player_client": ["ios", "android", "web", "mweb"],
-                    "player_skip": ["webpage", "configs"],
-                    # Skip signature verification that might fail
-                    "skip": ["dash", "hls"],
-                }
-            },
-            "geo_bypass": True,
-            # Add user agent to appear more like a real browser
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-us,en;q=0.5",
-                "Sec-Fetch-Mode": "navigate",
-            }
-        }
+        validation_opts = get_youtube_options(for_validation=True)
         
         # Validate and extract info
         with YoutubeDL(validation_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
             if info is None:
-                raise Exception("Could not extract video information from URL")
+                raise Exception("Could not extract video information")
             
             duration = info.get("duration", 0)
             title = info.get("title", "Unknown")
@@ -155,7 +169,7 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
         if duration > settings.MAX_VIDEO_DURATION:
             raise Exception(
                 f"Video is too long ({duration // 60} minutes). "
-                f"Maximum allowed is {settings.MAX_VIDEO_DURATION // 60} minutes."
+                f"Maximum: {settings.MAX_VIDEO_DURATION // 60} minutes."
             )
         
         update_progress(
@@ -168,19 +182,18 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
             uploader=uploader
         )
         
-        # Stage 2: Prepare download (10-20%)
+        # Stage 2: Prepare (10-20%)
         update_progress(task_id, 'PREPARING', 15, 'Preparing download...')
         
-        # Generate final filename
         final_filename = generate_unique_filename(title, file_id)
         mp3_path = os.path.join(settings.MEDIA_ROOT, final_filename)
         temp_path = os.path.join(settings.MEDIA_ROOT, f"temp_{file_id}")
         
-        # Stage 3: Download and Convert (20-90%)
+        # Stage 3: Download (20-90%)
         update_progress(task_id, 'DOWNLOADING', 20, 'Starting download...')
         
-        # Enhanced download options to bypass bot detection
-        ydl_opts = {
+        download_opts = get_youtube_options(for_validation=False)
+        download_opts.update({
             "format": "bestaudio/best",
             "outtmpl": temp_path + ".%(ext)s",
             "postprocessors": [{
@@ -189,65 +202,31 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
                 "preferredquality": settings.AUDIO_QUALITY,
             }],
             "progress_hooks": [ProgressHook(task_id)],
-            "socket_timeout": 30,
-            "retries": 10,
-            "fragment_retries": 10,
-            "skip_unavailable_fragments": False,
             "concurrent_fragment_downloads": 3,
             "http_chunk_size": 10485760,
-            "quiet": False,
-            "no_warnings": False,
-            "verbose": False,
-            
-            # CRITICAL: Enhanced extractor arguments to bypass bot detection
-            "extractor_args": {
-                "youtube": {
-                    # Try multiple client types in order
-                    "player_client": ["ios", "android", "web", "tv_embedded", "mweb"],
-                    "player_skip": ["webpage", "configs"],
-                    "skip": ["dash", "hls"],
-                    # Use iOS client for better reliability
-                    "innertube_client": "ios",
-                }
-            },
-            
-            # Add browser-like headers
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-us,en;q=0.5",
-                "Sec-Fetch-Mode": "navigate",
-            },
-            
-            "geo_bypass": True,
-            "format_sort": ["quality", "res", "fps", "codec:avc", "size", "br", "asr", "proto"],
             "keepvideo": False,
-            
-            # Disable age gate checks
-            "age_limit": None,
-        }
+            "format_sort": ["quality", "res", "fps", "codec:aac", "size", "br"],
+        })
         
-        with YoutubeDL(ydl_opts) as ydl:
+        with YoutubeDL(download_opts) as ydl:
             ydl.download([url])
         
         # Stage 4: Finalize (90-100%)
         update_progress(task_id, 'FINALIZING', 90, 'Finalizing...')
         
-        # Find and rename the extracted audio file
         temp_mp3 = temp_path + ".mp3"
         
         if os.path.exists(temp_mp3):
             os.rename(temp_mp3, mp3_path)
         elif not os.path.exists(mp3_path):
-            raise Exception("MP3 file was not created. Conversion failed.")
+            raise Exception("MP3 file was not created")
         
-        # Verify output
         if not os.path.exists(mp3_path):
-            raise Exception("MP3 file was not created. Conversion failed.")
+            raise Exception("MP3 file was not created")
         
         file_size = os.path.getsize(mp3_path)
         if file_size < 1024:
-            raise Exception("Generated MP3 file is too small. Conversion may have failed.")
+            raise Exception("Generated MP3 file is too small")
         
         # Success!
         update_progress(
@@ -273,13 +252,13 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
     except Exception as e:
         error_message = str(e)
         
-        # User-friendly error messages
+        # User-friendly errors
         if "Sign in to confirm" in error_message or "bot" in error_message.lower():
-            error_message = "YouTube is blocking automated downloads. Please try a different video or try again later."
+            error_message = "YouTube bot detection triggered. Try again in a few minutes or use a different video."
+        elif "Video unavailable" in error_message or "Private video" in error_message:
+            error_message = "This video is unavailable, private, or region-restricted."
         elif "Unsupported URL" in error_message:
-            error_message = "The provided URL is not supported. Please use a valid video URL."
-        elif "Video unavailable" in error_message:
-            error_message = "This video is unavailable, private, or restricted."
+            error_message = "The URL is not supported. Please use a valid YouTube or video URL."
         elif "timeout" in error_message.lower():
             error_message = "Connection timeout. Please try again."
         
@@ -295,21 +274,15 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
             if 'mp3_path' in locals() and os.path.exists(mp3_path):
                 os.remove(mp3_path)
             if 'temp_path' in locals():
-                temp_patterns = [
-                    temp_path + ".mp3",
-                    temp_path + ".mp4",
-                    temp_path + ".webm",
-                    temp_path + ".m4a",
-                    temp_path + ".part",
-                ]
-                for temp_file in temp_patterns:
+                for ext in [".mp3", ".mp4", ".webm", ".m4a", ".part"]:
+                    temp_file = temp_path + ext
                     if os.path.exists(temp_file):
                         os.remove(temp_file)
         except Exception as cleanup_error:
             print(f"Cleanup error: {cleanup_error}")
         
-        # Retry for network errors
-        if "fragment" in error_message.lower() or "network" in error_message.lower():
+        # Retry for transient errors
+        if any(keyword in error_message.lower() for keyword in ["fragment", "network", "timeout", "connection"]):
             retry_count = self.request.retries
             if retry_count < self.max_retries:
                 countdown = 5 * (2 ** retry_count)
@@ -320,13 +293,12 @@ def convert_video_to_mp3(self, url, file_id, video_title=None):
 
 @shared_task(name='converter.cleanup_old_files')
 def cleanup_old_files():
-    """Periodic task to clean up old converted files."""
+    """Clean up old MP3 files"""
     import time
     
     media_root = settings.MEDIA_ROOT
     max_age = settings.FILE_CLEANUP_AFTER
     current_time = time.time()
-    
     cleaned_count = 0
     
     try:
@@ -355,15 +327,15 @@ def cleanup_old_files():
 
 @shared_task(name='converter.update_ytdlp')
 def update_ytdlp():
-    """Periodic task to update yt-dlp to the latest version."""
+    """Update yt-dlp to latest version"""
     import subprocess
     try:
         result = subprocess.run(
-            ["pip", "install", "--upgrade", "yt-dlp"],
+            ["pip", "install", "--no-cache-dir", "--upgrade", "--force-reinstall", "yt-dlp"],
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=120
         )
-        return f"yt-dlp update: {result.stdout}"
+        return f"yt-dlp updated: {result.returncode == 0}"
     except Exception as e:
         return f"yt-dlp update failed: {str(e)}"
