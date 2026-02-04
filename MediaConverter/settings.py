@@ -97,10 +97,12 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = '/media/'
 # MEDIA_ROOT = BASE_DIR / 'media'
 # Use /tmp on Render (writable), /app/media locally
-if os.getenv('RENDER'):
+if RENDER or RENDER_EXTERNAL_HOSTNAME:
     MEDIA_ROOT = '/tmp/media'
+    print("[INFO] Using /tmp/media for file storage (Render deployment)")
 else:
     MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+    print(f"[INFO] Using {MEDIA_ROOT} for file storage (local development)")
 
 # Ensure media directory exists with proper permissions
 try:

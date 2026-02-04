@@ -8,25 +8,27 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     wget \
     curl \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies
+# Copy requirements and install Python packages
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
-
-# CRITICAL: Install latest yt-dlp
-RUN pip install --no-cache-dir --upgrade --force-reinstall yt-dlp
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --upgrade --force-reinstall yt-dlp
 
 # Copy application code
 COPY . .
 
+# Copy supervisor configuration
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
 # Create directories with proper permissions
-RUN mkdir -p /app/media /app/staticfiles && \
-    chmod 777 /app/media && \
-    chmod 755 /app/staticfiles
+RUN mkdir -p /app/media /app/staticfiles /tmp/media && \
+    chmod -R 777 /app/media /tmp/media && \
+    chmod -R 755 /app/staticfiles
 
 # Collect static files
 RUN python manage.py collectstatic --noinput || true
@@ -35,33 +37,7 @@ RUN python manage.py collectstatic --noinput || true
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${PORT:-10000}/health/ || exit 1
 
-# Use supervisor to manage multiple processes
-RUN pip install supervisor
-
-# Supervisor configuration
-RUN echo '[supervisord]\n\
-nodaemon=true\n\
-logfile=/dev/stdout\n\
-logfile_maxbytes=0\n\
-\n\
-[program:web]\n\
-command=daphne -b 0.0.0.0 -p %(ENV_PORT)s MediaConverter.asgi:application\n\
-stdout_logfile=/dev/stdout\n\
-stdout_logfile_maxbytes=0\n\
-stderr_logfile=/dev/stderr\n\
-stderr_logfile_maxbytes=0\n\
-autorestart=true\n\
-\n\
-[program:celery]\n\
-command=celery -A MediaConverter worker -l info --concurrency=1 --max-tasks-per-child=1\n\
-stdout_logfile=/dev/stdout\n\
-stdout_logfile_maxbytes=0\n\
-stderr_logfile=/dev/stderr\n\
-stderr_logfile_maxbytes=0\n\
-autorestart=true\n\
-' > /etc/supervisor/conf.d/supervisord.conf
-
 EXPOSE 10000
 
-# Ensure media directory exists at startup
-CMD ["sh", "-c", "mkdir -p /app/media && chmod 777 /app/media && supervisord -c /etc/supervisor/conf.d/supervisord.conf"]
+# Start supervisor
+CMD ["sh", "-c", "mkdir -p /tmp/media && chmod 777 /tmp/media && supervisord -c /etc/supervisor/conf.d/supervisord.conf"]
