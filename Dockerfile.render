@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
@@ -9,39 +8,60 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     wget \
     curl \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
 WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir --upgrade yt-dlp
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
+# CRITICAL: Install latest yt-dlp
+RUN pip install --no-cache-dir --upgrade --force-reinstall yt-dlp
+
+# Copy application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p /app/media /app/staticfiles
+# Create directories with proper permissions
+RUN mkdir -p /app/media /app/staticfiles && \
+    chmod 777 /app/media && \
+    chmod 755 /app/staticfiles
 
 # Collect static files
 RUN python manage.py collectstatic --noinput || true
 
-# Create startup script
-RUN echo '#!/bin/bash\n\
-python manage.py migrate --noinput\n\
-daphne -b 0.0.0.0 -p $PORT MediaConverter.asgi:application &\n\
-DAPHNE_PID=$!\n\
-celery -A MediaConverter worker -l info --concurrency=1 &\n\
-CELERY_PID=$!\n\
-wait $DAPHNE_PID $CELERY_PID\n\
-' > /app/start.sh && chmod +x /app/start.sh
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-10000}/health/ || exit 1
 
-# Expose port (Render will set the PORT env variable)
+# Use supervisor to manage multiple processes
+RUN pip install supervisor
+
+# Supervisor configuration
+RUN echo '[supervisord]\n\
+nodaemon=true\n\
+logfile=/dev/stdout\n\
+logfile_maxbytes=0\n\
+\n\
+[program:web]\n\
+command=daphne -b 0.0.0.0 -p %(ENV_PORT)s MediaConverter.asgi:application\n\
+stdout_logfile=/dev/stdout\n\
+stdout_logfile_maxbytes=0\n\
+stderr_logfile=/dev/stderr\n\
+stderr_logfile_maxbytes=0\n\
+autorestart=true\n\
+\n\
+[program:celery]\n\
+command=celery -A MediaConverter worker -l info --concurrency=1 --max-tasks-per-child=1\n\
+stdout_logfile=/dev/stdout\n\
+stdout_logfile_maxbytes=0\n\
+stderr_logfile=/dev/stderr\n\
+stderr_logfile_maxbytes=0\n\
+autorestart=true\n\
+' > /etc/supervisor/conf.d/supervisord.conf
+
 EXPOSE 10000
 
-# Start the application
-CMD ["/app/start.sh"]
+# Ensure media directory exists at startup
+CMD ["sh", "-c", "mkdir -p /app/media && chmod 777 /app/media && supervisord -c /etc/supervisor/conf.d/supervisord.conf"]

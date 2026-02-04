@@ -95,7 +95,20 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+# MEDIA_ROOT = BASE_DIR / 'media'
+# Use /tmp on Render (writable), /app/media locally
+if os.getenv('RENDER'):
+    MEDIA_ROOT = '/tmp/media'
+else:
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Ensure media directory exists with proper permissions
+try:
+    os.makedirs(MEDIA_ROOT, mode=0o777, exist_ok=True)
+    print(f"[SUCCESS] Media directory created/verified: {MEDIA_ROOT}")
+    print(f"[INFO] Media directory writable: {os.access(MEDIA_ROOT, os.W_OK)}")
+except Exception as e:
+    print(f"[ERROR] Failed to create media directory: {e}")
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
