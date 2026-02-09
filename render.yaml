@@ -5,7 +5,6 @@ services:
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []
 
-  # Web service (Daphne only)
   - type: web
     name: video-converter-web
     env: docker
@@ -43,40 +42,5 @@ services:
         value: "mp3"
       - key: FILE_CLEANUP_AFTER
         value: "1800"
-
-  # Celery worker as background service
-  - type: worker
-    name: video-converter-celery
-    env: docker
-    plan: free
-    region: oregon
-    dockerfilePath: ./Dockerfile.render
-    dockerCommand: celery -A MediaConverter worker -l info --concurrency=1 --max-tasks-per-child=10
-    envVars:
-      - key: SECRET_KEY
-        sync: false
-      - key: DEBUG
-        value: "False"
-      - key: REDIS_URL
-        fromService:
-          name: video-converter-redis
-          type: redis
-          property: connectionString
-      - key: CELERY_BROKER_URL
-        fromService:
-          name: video-converter-redis
-          type: redis
-          property: connectionString
-      - key: CELERY_RESULT_BACKEND
-        fromService:
-          name: video-converter-redis
-          type: redis
-          property: connectionString
-      - key: MAX_VIDEO_DURATION
-        value: "600"
-      - key: AUDIO_QUALITY
-        value: "192"
-      - key: AUDIO_FORMAT
-        value: "mp3"
-      - key: FILE_CLEANUP_AFTER
-        value: "1800"
+      - key: PORT
+        value: "10000"
