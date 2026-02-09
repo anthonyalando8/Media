@@ -35,7 +35,7 @@ RUN python manage.py collectstatic --noinput || true
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-10000}/health/ || exit 1
+    CMD curl -f http://localhost:${PORT:-10000}/api/health/ || exit 1
 
 EXPOSE 10000
 

@@ -1,10 +1,21 @@
+"""
+URL configuration for video converter app.
+"""
 from django.urls import path
-from .views import index, serve_media, start_conversion, conversion_status, health_check
+from . import views
+
+app_name = 'converter'
 
 urlpatterns = [
-    path("", index, name="home"),
-    path("health/", health_check, name="health_check"),
-    path("api/convert/", start_conversion, name="start_conversion"),
-    path("api/status/<str:task_id>/", conversion_status, name="conversion_status"),
-    path("media/<str:filename>", serve_media, name="serve_media"),  # Add this
+    # Main page
+    path('', views.index, name='index'),
+    
+    # API endpoints
+    path('api/video-info/', views.get_video_info_view, name='get_video_info'),
+    path('api/convert/', views.convert_video_view, name='convert_video'),
+    path('api/progress/<str:task_id>/', views.check_progress, name='check_progress'),
+    path('api/health/', views.health_check, name='health_check'),
+    
+    # Media serving
+    path('media/<str:filename>', views.serve_media, name='serve_media'),
 ]

@@ -6,7 +6,7 @@ services:
     ipAllowList: []
 
   - type: web
-    name: video-to-mp3-converter
+    name: video-cow
     env: docker
     plan: free
     region: oregon
