@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     wget \
     curl \
-    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -21,9 +20,6 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 
 # Copy application code
 COPY . .
-
-# Copy supervisor configuration
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Create directories with proper permissions
 RUN mkdir -p /app/media /app/staticfiles /tmp/media && \
@@ -39,5 +35,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 EXPOSE 10000
 
-# Start supervisor
-CMD ["sh", "-c", "mkdir -p /tmp/media && chmod 777 /tmp/media && supervisord -c /etc/supervisor/conf.d/supervisord.conf"]
+# Default command (for web service)
+CMD ["sh", "-c", "daphne -b 0.0.0.0 -p ${PORT:-10000} MediaConverter.asgi:application"]
